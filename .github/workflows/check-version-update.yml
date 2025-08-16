@@ -27,7 +27,7 @@ jobs:
           # 替换为你的上游 VERSION.txt 文件的 raw URL
           VERSION_URL="https://github.com/MoonTechLab/LunaTV/raw/refs/heads/main/VERSION.txt"
           # 获取最新版本号
-          LATEST_VERSION=$(curl -s "$VERSION_URL")
+          LATEST_VERSION=$(curl -v "$VERSION_URL")
           echo "Latest version: $LATEST_VERSION"
           # 获取本地记录的版本（假设存储在文件中）
           if [ -f "last_version.txt" ]; then
