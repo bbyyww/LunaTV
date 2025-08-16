@@ -1,0 +1,65 @@
+name: Check Upstream VERSION.txt Update
+
+on:
+  schedule:
+    - cron: '0 */6 * * *' # 每 6 小时运行一次
+  workflow_dispatch: # 支持手动触发
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      # 检出仓库代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 安装 curl 和 jq
+      - name: Install curl and jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl jq
+          
+          
+      # 检查上游 VERSION.txt 文件
+      - name: Check VERSION.txt update
+        id: check-version
+        run: |
+          # 替换为你的上游 VERSION.txt 文件的 raw URL
+          VERSION_URL="https://github.com/MoonTechLab/LunaTV/raw/refs/heads/main/VERSION.txt"
+          # 获取最新版本号
+          LATEST_VERSION=$(curl -s "$VERSION_URL")
+          echo "Latest version: $LATEST_VERSION"
+          # 获取本地记录的版本（假设存储在文件中）
+          if [ -f "last_version.txt" ]; then
+            LAST_VERSION=$(cat last_version.txt)
+          else
+            LAST_VERSION="none"
+          fi
+          echo "Last known version: $LAST_VERSION"
+          # 如果版本不同，触发 Webhook
+          if [ "$LATEST_VERSION" != "$LAST_VERSION" ]; then
+            echo "New version detected: $LATEST_VERSION"
+            echo "has_new_version=true" >> $GITHUB_OUTPUT
+            echo "$LATEST_VERSION" > last_version.txt
+          else
+            echo "No new version detected."
+            echo "has_new_version=false" >> $GITHUB_OUTPUT
+          fi
+
+      # 提交更新的版本文件（如果有新版本）
+      - name: Commit updated version
+        if: steps.check-version.outputs.has_new_version == 'true'
+        run: |
+          git config user.name "GitHub Action"
+          git config user.email "action@github.com"
+          git add last_version.txt
+          git commit -m "Update version to $LATEST_VERSION"
+          git push
+
+      # 触发 Render Webhook
+      - name: Trigger Render Webhook
+        if: steps.check-version.outputs.has_new_version == 'true'
+        env:
+          RENDER_WEBHOOK_URL: ${{ secrets.RENDER_WEBHOOK_URL }}
+        run: |
+          curl -X POST -H "Content-Type: application/json" -d '{"event": "version_updated", "version": "'"$(cat last_version.txt)"'"}' "$RENDER_WEBHOOK_URL"
