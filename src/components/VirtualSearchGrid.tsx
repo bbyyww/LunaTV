@@ -201,16 +201,7 @@ export const VirtualSearchGrid: React.FC<VirtualSearchGridProps> = ({
 
 
   return (
-    <div
-      ref={containerRef}
-      className='w-full'
-      style={{
-        height: Math.min(
-          typeof window !== 'undefined' ? window.innerHeight - 200 : 600,
-          800
-        )
-      }}
-    >
+    <div ref={containerRef} className='w-full'>
       {totalItemCount === 0 ? (
         <div className='flex justify-center items-center h-40'>
           {isLoading ? (
@@ -253,10 +244,6 @@ export const VirtualSearchGrid: React.FC<VirtualSearchGridProps> = ({
           aria-rowcount={rowCount}
           aria-colcount={columnCount}
           style={{
-            // react-window 2.1.2优化：明确设置尺寸以避免ResizeObserver
-            width: containerWidth,
-            // 根据源码：必须设置overflow auto才能正确滚动
-            overflow: 'auto',
             // 确保不创建新的stacking context，让菜单能正确显示在最顶层
             isolation: 'auto',
             // 平滑滚动优化
