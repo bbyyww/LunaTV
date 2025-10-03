@@ -2,7 +2,7 @@
 
 'use client';
 
-import { AlertCircle, CheckCircle, User, Lock, Sparkles } from 'lucide-react';
+import { AlertCircle, CheckCircle, User, Lock, Sparkles, UserPlus } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
@@ -246,17 +246,18 @@ function LoginPageClient() {
 
           {/* 注册链接 - 仅在非 localStorage 模式下显示 */}
           {shouldAskUsername && (
-            <div className='text-center pt-4 border-t border-gray-200 dark:border-gray-700'>
-              <span className='text-gray-600 dark:text-gray-400 text-sm'>
+            <div className='mt-6 pt-6 border-t border-gray-200 dark:border-gray-700'>
+              <p className='text-center text-gray-600 dark:text-gray-400 text-sm mb-3'>
                 还没有账户？
-              </span>
-              <button
-                type='button'
-                onClick={() => router.push('/register')}
-                className='ml-2 text-green-600 dark:text-green-400 text-sm font-semibold hover:text-green-700 dark:hover:text-green-300 underline-offset-4 hover:underline transition-all'
+              </p>
+              <a
+                href='/register'
+                className='group flex items-center justify-center gap-2 w-full px-6 py-2.5 rounded-lg bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-800/50 text-green-700 dark:text-green-400 text-sm font-semibold hover:from-green-100 hover:to-emerald-100 dark:hover:from-green-900/30 dark:hover:to-emerald-900/30 hover:border-green-300 dark:hover:border-green-700 transition-all duration-300 hover:shadow-md hover:scale-[1.02] active:scale-100'
               >
-                立即注册 →
-              </button>
+                <UserPlus className='w-4 h-4' />
+                <span>立即注册</span>
+                <span className='inline-block transition-transform group-hover:translate-x-1'>→</span>
+              </a>
             </div>
           )}
         </form>

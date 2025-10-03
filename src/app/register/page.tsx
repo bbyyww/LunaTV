@@ -365,17 +365,18 @@ function RegisterPageClient() {
             {loading ? '注册中...' : success ? '注册成功，正在跳转...' : '立即注册'}
           </button>
 
-          <div className='text-center pt-4 border-t border-gray-200 dark:border-gray-700'>
-            <span className='text-gray-600 dark:text-gray-400 text-sm'>
+          <div className='mt-6 pt-6 border-t border-gray-200 dark:border-gray-700'>
+            <p className='text-center text-gray-600 dark:text-gray-400 text-sm mb-3'>
               已有账户？
-            </span>
-            <button
-              type='button'
-              onClick={() => router.push('/login')}
-              className='ml-2 text-blue-600 dark:text-blue-400 text-sm font-semibold hover:text-blue-700 dark:hover:text-blue-300 underline-offset-4 hover:underline transition-all'
+            </p>
+            <a
+              href='/login'
+              className='group flex items-center justify-center gap-2 w-full px-6 py-2.5 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800/50 text-blue-700 dark:text-blue-400 text-sm font-semibold hover:from-blue-100 hover:to-indigo-100 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30 hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-300 hover:shadow-md hover:scale-[1.02] active:scale-100'
             >
-              立即登录 →
-            </button>
+              <Lock className='w-4 h-4' />
+              <span>立即登录</span>
+              <span className='inline-block transition-transform group-hover:translate-x-1'>→</span>
+            </a>
           </div>
         </form>
       </div>
