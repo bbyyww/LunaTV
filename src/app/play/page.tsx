@@ -2265,8 +2265,13 @@ function PlayPageClient() {
         cover: detailRef.current?.poster || '',
         index: currentEpisodeIndexRef.current + 1, // 转换为1基索引
         total_episodes: currentTotalEpisodes,
-        // 关键修复：设置原始集数，首次观看时使用当前集数，后续保持不变
-        original_episodes: existingRecord?.original_episodes || currentTotalEpisodes,
+        // 🔑 关键：不要在这里设置 original_episodes
+        // 让 savePlayRecord 自己处理：
+        // - 首次保存时会自动设置为 total_episodes
+        // - 后续保存时会从数据库读取并保持不变
+        // - 只有当用户看了新集数时才会更新
+        // 这样避免了播放器传入错误的 original_episodes（可能是更新后的值）
+        original_episodes: existingRecord?.original_episodes, // 只传递已有值，不自动填充
         play_time: Math.floor(currentTime),
         total_time: Math.floor(duration),
         save_time: Date.now(),
@@ -3980,19 +3985,20 @@ function PlayPageClient() {
         </div>
         {/* 第二行：播放器和选集 */}
         <div className='space-y-2'>
-          {/* 折叠控制和跳过设置 - 仅在 lg 及以上屏幕显示 */}
-          <div className='hidden lg:flex justify-between items-center'>
-            {/* 跳过设置按钮 */}
+          {/* 折叠控制和跳过设置 */}
+          <div className='flex justify-between items-center'>
+            {/* 跳过设置按钮 - 在移动端和桌面端都显示 */}
             {currentSource && currentId && (
               <SkipSettingsButton onClick={() => setIsSkipSettingOpen(true)} />
             )}
 
             <div className='flex-1'></div>
+            {/* 折叠控制按钮 - 仅在 lg 及以上屏幕显示 */}
             <button
               onClick={() =>
                 setIsEpisodeSelectorCollapsed(!isEpisodeSelectorCollapsed)
               }
-              className='group relative flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-white/80 hover:bg-white dark:bg-gray-800/80 dark:hover:bg-gray-800 backdrop-blur-sm border border-gray-200/50 dark:border-gray-700/50 shadow-sm hover:shadow-md transition-all duration-200'
+              className='hidden lg:flex group relative items-center space-x-1.5 px-3 py-1.5 rounded-full bg-white/80 hover:bg-white dark:bg-gray-800/80 dark:hover:bg-gray-800 backdrop-blur-sm border border-gray-200/50 dark:border-gray-700/50 shadow-sm hover:shadow-md transition-all duration-200'
               title={
                 isEpisodeSelectorCollapsed ? '显示选集面板' : '隐藏选集面板'
               }
