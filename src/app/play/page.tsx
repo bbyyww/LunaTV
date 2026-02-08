@@ -348,6 +348,10 @@ function PlayPageClient() {
   const {
     externalDanmuEnabled,
     setExternalDanmuEnabled,
+    danmuList, // 弹幕列表state（用于显示弹幕数量）
+    loading: danmuLoading, // 加载状态（state）
+    loadMeta: danmuLoadMeta, // 加载元数据
+    error: danmuError, // 错误状态
     loadExternalDanmu,
     handleDanmuOperationOptimized,
     externalDanmuEnabledRef,
@@ -457,6 +461,39 @@ function PlayPageClient() {
       }
 
       try {
+        // 修复anime4k-webgpu库的buffer size限制问题
+        // 在全局层面patch requestAdapter，确保所有adapter都有正确的limits
+        const originalRequestAdapter = (navigator as any).gpu.requestAdapter.bind((navigator as any).gpu);
+
+        (navigator as any).gpu.requestAdapter = async (options?: any) => {
+          const adapter = await originalRequestAdapter(options);
+          if (!adapter) return adapter;
+
+          // 保存原始的requestDevice方法
+          const originalRequestDevice = adapter.requestDevice.bind(adapter);
+
+          // 重写requestDevice方法，添加必要的buffer size限制
+          adapter.requestDevice = async (descriptor?: any) => {
+            const adapterLimits = adapter.limits;
+
+            // 合并用户提供的descriptor和我们需要的limits
+            const enhancedDescriptor = {
+              ...descriptor,
+              requiredLimits: {
+                ...descriptor?.requiredLimits,
+                // 使用adapter支持的最大值，但不超过2GB
+                maxBufferSize: Math.min(adapterLimits.maxBufferSize || 2147483648, 2147483648),
+                maxStorageBufferBindingSize: Math.min(adapterLimits.maxStorageBufferBindingSize || 1073741824, 1073741824),
+              }
+            };
+
+            console.log('WebGPU设备请求配置:', enhancedDescriptor.requiredLimits);
+            return originalRequestDevice(enhancedDescriptor);
+          };
+
+          return adapter;
+        };
+
         const adapter = await (navigator as any).gpu.requestAdapter();
         if (!adapter) {
           setWebGPUSupported(false);
@@ -466,6 +503,10 @@ function PlayPageClient() {
 
         setWebGPUSupported(true);
         console.log('WebGPU支持检测：✅ 支持');
+        console.log('Adapter limits:', {
+          maxBufferSize: adapter.limits.maxBufferSize,
+          maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize
+        });
       } catch (err) {
         setWebGPUSupported(false);
         console.log('WebGPU不支持：检测失败', err);
@@ -1077,52 +1118,65 @@ function PlayPageClient() {
 
       console.log('搜索演员作品:', celebrityName);
 
-      // 使用豆瓣搜索API（通过cmliussss CDN）
-      const searchUrl = `https://movie.douban.cmliussss.net/j/search_subjects?type=movie&tag=${encodeURIComponent(celebrityName)}&sort=recommend&page_limit=20&page_start=0`;
+      // 三级 fallback：豆瓣通用搜索 -> 豆瓣API -> TMDB
+      let works: any[] = [];
+      let source = '';
 
-      const response = await fetch(searchUrl);
-      const data = await response.json();
+      // 1. 豆瓣通用搜索（主用，数据最全）
+      try {
+        const response = await fetch(`/api/douban/celebrity-works?name=${encodeURIComponent(celebrityName)}&limit=20`);
+        const data = await response.json();
+        if (data.success && data.works && data.works.length > 0) {
+          works = data.works;
+          source = 'douban-search';
+          console.log(`找到 ${works.length} 部 ${celebrityName} 的作品（豆瓣通用搜索）`);
+        }
+      } catch (e) {
+        console.warn('豆瓣通用搜索失败:', e);
+      }
 
-      if (data.subjects && data.subjects.length > 0) {
-        const works = data.subjects.map((item: any) => ({
-          id: item.id,
-          title: item.title,
-          poster: item.cover,
-          rate: item.rate,
-          year: item.url?.match(/\/subject\/(\d+)\//)?.[1] || '',
-          source: 'douban'
-        }));
+      // 2. 豆瓣 API（备用）
+      if (works.length === 0) {
+        console.log('豆瓣通用搜索无结果，尝试豆瓣API...');
+        try {
+          const apiResponse = await fetch(`/api/douban/celebrity-works?name=${encodeURIComponent(celebrityName)}&limit=20&mode=api`);
+          const apiData = await apiResponse.json();
+          if (apiData.success && apiData.works && apiData.works.length > 0) {
+            works = apiData.works;
+            source = 'douban-api';
+            console.log(`找到 ${works.length} 部 ${celebrityName} 的作品（豆瓣API）`);
+          }
+        } catch (e) {
+          console.warn('豆瓣API搜索失败:', e);
+        }
+      }
 
-        // 保存到缓存（2小时）
-        await ClientCache.set(cacheKey, works, 2 * 60 * 60);
-
-        setCelebrityWorks(works);
-        console.log(`找到 ${works.length} 部 ${celebrityName} 的作品（豆瓣，已缓存）`);
-      } else {
-        // 豆瓣没有结果，尝试TMDB fallback
-        console.log('豆瓣未找到相关作品，尝试TMDB...');
+      // 3. TMDB（最后 fallback）
+      if (works.length === 0) {
+        console.log('豆瓣无结果，尝试TMDB...');
         try {
           const tmdbResponse = await fetch(`/api/tmdb/actor?actor=${encodeURIComponent(celebrityName)}&type=movie&limit=20`);
           const tmdbResult = await tmdbResponse.json();
-
           if (tmdbResult.code === 200 && tmdbResult.list && tmdbResult.list.length > 0) {
-            // 给TMDB作品添加source标记
-            const worksWithSource = tmdbResult.list.map((work: any) => ({
+            works = tmdbResult.list.map((work: any) => ({
               ...work,
               source: 'tmdb'
             }));
-            // 保存到缓存（2小时）
-            await ClientCache.set(cacheKey, worksWithSource, 2 * 60 * 60);
-            setCelebrityWorks(worksWithSource);
-            console.log(`找到 ${tmdbResult.list.length} 部 ${celebrityName} 的作品（TMDB，已缓存）`);
-          } else {
-            console.log('TMDB也未找到相关作品');
-            setCelebrityWorks([]);
+            source = 'tmdb';
+            console.log(`找到 ${works.length} 部 ${celebrityName} 的作品（TMDB）`);
           }
-        } catch (tmdbError) {
-          console.error('TMDB搜索失败:', tmdbError);
-          setCelebrityWorks([]);
+        } catch (e) {
+          console.warn('TMDB搜索失败:', e);
         }
+      }
+
+      if (works.length > 0) {
+        await ClientCache.set(cacheKey, works, 2 * 60 * 60);
+        setCelebrityWorks(works);
+        console.log(`演员作品已缓存: ${celebrityName} (${source})`);
+      } else {
+        console.log('所有源均未找到相关作品');
+        setCelebrityWorks([]);
       }
     } catch (error) {
       console.error('获取演员作品出错:', error);
@@ -2249,7 +2303,7 @@ function PlayPageClient() {
         isStop: artPlayerRef.current.plugins.artplayerPluginDanmuku.isStop,
         option: artPlayerRef.current.plugins.artplayerPluginDanmuku.option
       };
-      
+
       // 使用防抖处理弹幕重新加载
       episodeSwitchTimeoutRef.current = setTimeout(async () => {
         try {
@@ -2258,27 +2312,27 @@ function PlayPageClient() {
             console.warn('⚠️ 集数切换后弹幕插件不存在，跳过弹幕加载');
             return;
           }
-          
-          const externalDanmu = await loadExternalDanmu(); // 这里会检查开关状态
-          console.log('🔄 集数变化后外部弹幕加载结果:', externalDanmu);
-          
+
+          const result = await loadExternalDanmu(); // 这里会检查开关状态，返回 { count, data }
+          console.log('🔄 集数变化后外部弹幕加载结果:', result.count, '条');
+
           // 再次确认插件状态
           if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
             const plugin = artPlayerRef.current.plugins.artplayerPluginDanmuku;
-            
-            if (externalDanmu.length > 0) {
-              console.log('✅ 向播放器插件重新加载弹幕数据:', externalDanmu.length, '条');
-              plugin.load(externalDanmu);
-              
+
+            if (result.count > 0) {
+              console.log('✅ 向播放器插件重新加载弹幕数据:', result.count, '条');
+              plugin.load(result.data);
+
               // 恢复弹幕插件的状态
               if (danmuPluginStateRef.current) {
                 if (!danmuPluginStateRef.current.isHide) {
                   plugin.show();
                 }
               }
-              
+
               if (artPlayerRef.current) {
-                artPlayerRef.current.notice.show = `已加载 ${externalDanmu.length} 条弹幕`;
+                artPlayerRef.current.notice.show = `已加载 ${result.count} 条弹幕`;
               }
             } else {
               console.log('📭 集数变化后没有弹幕数据可加载');
@@ -2860,9 +2914,9 @@ function PlayPageClient() {
 
           try {
             const startTime = performance.now();
-            const danmuData = await loadExternalDanmu();
+            const result = await loadExternalDanmu();
 
-            if (danmuData.length > 0 && artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
+            if (result.count > 0 && artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
               const plugin = artPlayerRef.current.plugins.artplayerPluginDanmuku;
 
               // 🚀 确保在加载新弹幕前完全清空旧弹幕
@@ -2871,17 +2925,17 @@ function PlayPageClient() {
               console.log('🧹 换源后已清空旧弹幕，准备加载新弹幕');
 
               // 🚀 优化大量弹幕的加载：分批处理，减少阻塞
-              if (danmuData.length > 1000) {
-                console.log(`📊 检测到大量弹幕 (${danmuData.length}条)，启用分批加载`);
+              if (result.count > 1000) {
+                console.log(`📊 检测到大量弹幕 (${result.count}条)，启用分批加载`);
 
                 // 先加载前500条，快速显示
-                const firstBatch = danmuData.slice(0, 500);
+                const firstBatch = result.data.slice(0, 500);
                 plugin.load(firstBatch);
 
                 // 剩余弹幕分批异步加载，避免阻塞
                 const remainingBatches = [];
-                for (let i = 500; i < danmuData.length; i += 300) {
-                  remainingBatches.push(danmuData.slice(i, i + 300));
+                for (let i = 500; i < result.data.length; i += 300) {
+                  remainingBatches.push(result.data.slice(i, i + 300));
                 }
 
                 // 使用requestIdleCallback分批加载剩余弹幕
@@ -2899,8 +2953,8 @@ function PlayPageClient() {
                 console.log(`⚡ 分批加载完成: 首批${firstBatch.length}条 + ${remainingBatches.length}个后续批次`);
               } else {
                 // 弹幕数量较少，正常加载
-                plugin.load(danmuData);
-                console.log(`✅ 换源后弹幕加载完成: ${danmuData.length} 条`);
+                plugin.load(result.data);
+                console.log(`✅ 换源后弹幕加载完成: ${result.count} 条`);
               }
 
               const loadTime = performance.now() - startTime;
@@ -3825,7 +3879,7 @@ function PlayPageClient() {
           {
             name: '弹幕设置',
             html: '弹幕设置',
-            tooltip: '打开弹幕设置面板', // 添加tooltip避免显示undefined
+            tooltip: '打开弹幕设置面板',
             icon: '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>',
             // 🎨 点击式按钮，打开美化的弹幕设置面板
             onClick: function () {
@@ -3834,6 +3888,8 @@ function PlayPageClient() {
               if (artPlayerRef.current) {
                 artPlayerRef.current.setting.show = false;
               }
+              // ✅ 必须返回tooltip文本，否则ArtPlayer会设置为undefined
+              return '打开弹幕设置面板';
             },
           },
           ...(webGPUSupported ? [
@@ -4087,6 +4143,8 @@ function PlayPageClient() {
           // 其他浏览器：不显示 Chromecast（不支持 Cast API）
           ...(isChrome && !isIOS ? [
             artplayerPluginChromecast({
+              title: videoTitle ? `${videoTitle}${currentEpisodeIndex >= 0 ? ` - 第${currentEpisodeIndex + 1}集` : ''}` : undefined,
+              poster: videoCover || undefined,
               onStateChange: (state) => {
                 console.log('Chromecast state changed:', state);
               },
@@ -4095,6 +4153,9 @@ function PlayPageClient() {
               },
               onCastStart: () => {
                 console.log('Chromecast started');
+              },
+              onCastEnd: () => {
+                console.log('Chromecast ended');
               },
               onError: (error) => {
                 console.error('Chromecast error:', error);
@@ -4570,7 +4631,7 @@ function PlayPageClient() {
             }
           }, 2000); // 延迟2秒确保弹幕插件完全初始化
         };
-        
+
         // 启用移动端弹幕配置切换
         addMobileDanmakuToggle();
 
@@ -4578,14 +4639,14 @@ function PlayPageClient() {
         console.log('播放器已就绪，开始加载外部弹幕');
         setTimeout(async () => {
           try {
-            const externalDanmu = await loadExternalDanmu(); // 这里会检查开关状态
-            console.log('外部弹幕加载结果:', externalDanmu);
-            
+            const result = await loadExternalDanmu(); // 这里会检查开关状态，返回 { count, data }
+            console.log('外部弹幕加载结果:', result.count, '条');
+
             if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
-              if (externalDanmu.length > 0) {
-                console.log('向播放器插件加载弹幕数据:', externalDanmu.length, '条');
-                artPlayerRef.current.plugins.artplayerPluginDanmuku.load(externalDanmu);
-                artPlayerRef.current.notice.show = `已加载 ${externalDanmu.length} 条弹幕`;
+              if (result.count > 0) {
+                console.log('向播放器插件加载弹幕数据:', result.count, '条');
+                artPlayerRef.current.plugins.artplayerPluginDanmuku.load(result.data);
+                artPlayerRef.current.notice.show = `已加载 ${result.count} 条弹幕`;
               } else {
                 console.log('没有弹幕数据可加载');
                 artPlayerRef.current.notice.show = '暂无弹幕数据';
@@ -4603,7 +4664,7 @@ function PlayPageClient() {
           localStorage.setItem('danmaku_visible', 'true');
           console.log('弹幕显示状态已保存');
         });
-        
+
         artPlayerRef.current.on('artplayerPluginDanmuku:hide', () => {
           localStorage.setItem('danmaku_visible', 'false');
           console.log('弹幕隐藏状态已保存');
@@ -5380,17 +5441,22 @@ function PlayPageClient() {
           setIsDanmuSettingsPanelOpen(false);
           setTimeout(() => setIsDanmuSettingsPanelOpen(true), 50);
         }}
-        danmuCount={artPlayerRef.current?.plugins?.artplayerPluginDanmuku?.danmuku?.length || 0}
-        loading={danmuLoadingRef.current?.loading || false}
+        danmuCount={danmuList.length} // 使用state而不是ref，确保React能追踪变化
+        loading={danmuLoading}
+        loadMeta={danmuLoadMeta}
+        error={danmuError}
         onReload={async () => {
-          // 重新加载外部弹幕
-          const newDanmu = await loadExternalDanmu();
+          // 重新加载外部弹幕（强制刷新）
+          const result = await loadExternalDanmu({ force: true });
           if (artPlayerRef.current?.plugins?.artplayerPluginDanmuku) {
-            artPlayerRef.current.plugins.artplayerPluginDanmuku.load(newDanmu);
-            if (newDanmu.length > 0) {
-              artPlayerRef.current.notice.show = `已加载 ${newDanmu.length} 条弹幕`;
+            artPlayerRef.current.plugins.artplayerPluginDanmuku.load(result.data);
+            if (result.count > 0) {
+              artPlayerRef.current.notice.show = `已加载 ${result.count} 条弹幕`;
+            } else {
+              artPlayerRef.current.notice.show = '暂无弹幕数据';
             }
           }
+          return result.count;
         }}
       />
       </PageLayout>
