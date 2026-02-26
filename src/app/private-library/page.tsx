@@ -2,8 +2,8 @@
 
 'use client';
 
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { ArrowDownWideNarrow, ArrowUpNarrowWide, Film, Search, X } from 'lucide-react';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowDownWideNarrow, ArrowUpNarrowWide, Film, RefreshCw, Search, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -48,6 +48,8 @@ const PAGE_SIZE = 20;
 export default function PrivateLibraryPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const runtimeConfig = useMemo(() => {
     if (typeof window !== 'undefined' && (window as any).RUNTIME_CONFIG) {
@@ -70,8 +72,19 @@ export default function PrivateLibraryPage() {
     return undefined;
   });
   const [selectedView, setSelectedView] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<string>('SortName');
-  const [sortOrder, setSortOrder] = useState<'Ascending' | 'Descending'>('Ascending');
+  const [sortBy, setSortBy] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('emby_sortBy') ?? 'PremiereDate';
+    }
+    return 'PremiereDate';
+  });
+  const [sortOrder, setSortOrder] = useState<'Ascending' | 'Descending'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('emby_sortOrder');
+      if (saved === 'Ascending' || saved === 'Descending') return saved;
+    }
+    return 'Descending';
+  });
   const [mounted, setMounted] = useState(false);
   const [searchKeyword, setSearchKeyword] = useState<string>('');
   const observerTarget = useRef<HTMLDivElement>(null);
@@ -103,6 +116,8 @@ export default function PrivateLibraryPage() {
   });
 
   const embySourceOptions = sourcesData ?? [];
+  const currentEmbySource = embySourceOptions.find(s => s.key === embyKey);
+  const embySourceName = currentEmbySource?.name || 'Emby';
 
   // 源列表加载完成后，如果还没有选中的 key，自动选第一个
   useEffect(() => {
@@ -222,6 +237,12 @@ export default function PrivateLibraryPage() {
   const isSearchMode = searchKeyword.trim().length > 0;
 
   // ── UI helpers ────────────────────────────────────────────────────────────
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await queryClient.invalidateQueries({ queryKey: ['emby'] });
+    setIsRefreshing(false);
+  };
+
   const sortOptions = [
     { value: 'SortName', label: '名称', icon: ArrowUpNarrowWide },
     { value: 'DateCreated', label: '添加时间', icon: ArrowDownWideNarrow },
@@ -229,12 +250,11 @@ export default function PrivateLibraryPage() {
   ];
 
   const toggleSortOrder = () => {
-    setSortOrder((prev) => (prev === 'Ascending' ? 'Descending' : 'Ascending'));
-  };
-
-  const handleVideoClick = (video: Video) => {
-    const sourceParam = embyKey ? `emby_${embyKey}` : 'emby';
-    router.push(`/play?source=${sourceParam}&id=${video.id}&title=${encodeURIComponent(video.title)}`);
+    setSortOrder((prev) => {
+      const next = prev === 'Ascending' ? 'Descending' : 'Ascending';
+      localStorage.setItem('emby_sortOrder', next);
+      return next;
+    });
   };
 
   const errorMessage = isError ? (listError as Error)?.message || '获取列表失败，请稍后重试' : '';
@@ -259,7 +279,25 @@ export default function PrivateLibraryPage() {
       <div className="container mx-auto px-4 py-6">
         {/* 标题和源选择 */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold mb-4">Emby</h1>
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-2xl font-bold">Emby</h1>
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              title="刷新列表"
+              className={`group relative flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all duration-300 transform hover:scale-105
+                ${isRefreshing
+                  ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
+                  : 'bg-linear-to-r from-emerald-500 via-green-500 to-teal-500 text-white shadow-lg shadow-green-500/30 hover:shadow-green-500/50'
+                }`}
+            >
+              {!isRefreshing && (
+                <div className="absolute inset-0 rounded-xl bg-linear-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
+              )}
+              <RefreshCw className={`h-4 w-4 relative z-10 ${isRefreshing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} />
+              <span className="relative z-10">{isRefreshing ? '刷新中...' : '刷新'}</span>
+            </button>
+          </div>
 
           {/* Emby 源选择 */}
           {embySourceOptions.length > 1 && (
@@ -339,7 +377,7 @@ export default function PrivateLibraryPage() {
                 return (
                   <button
                     key={option.value}
-                    onClick={() => setSortBy(option.value)}
+                    onClick={() => { setSortBy(option.value); localStorage.setItem('emby_sortBy', option.value); }}
                     className={`group relative overflow-hidden rounded-xl px-5 py-2.5 text-sm font-medium transition-all duration-300 transform hover:scale-105 ${
                       sortBy === option.value
                         ? 'bg-linear-to-r from-green-500 via-emerald-600 to-teal-500 text-white shadow-lg shadow-green-500/40'
@@ -420,16 +458,16 @@ export default function PrivateLibraryPage() {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
               {searchResults.map((video) => (
-                <div key={video.id} onClick={() => handleVideoClick(video)}>
-                  <VideoCard
-                    id={video.id}
-                    title={video.title}
-                    poster={video.poster}
-                    year={video.year}
-                    source={embyKey ? `emby_${embyKey}` : 'emby'}
-                    from="search"
-                  />
-                </div>
+                <VideoCard
+                  key={video.id}
+                  id={video.id}
+                  title={video.title}
+                  poster={video.poster}
+                  year={video.year}
+                  source={embyKey ? `emby_${embyKey}` : 'emby'}
+                  source_name={embySourceName}
+                  from="search"
+                />
               ))}
             </div>
           </div>
@@ -439,16 +477,16 @@ export default function PrivateLibraryPage() {
         {!loading && videos.length > 0 && !isSearchMode && (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
             {videos.map((video) => (
-              <div key={video.id} onClick={() => handleVideoClick(video)}>
-                <VideoCard
-                  id={video.id}
-                  title={video.title}
-                  poster={video.poster}
-                  year={video.year}
-                  source={embyKey ? `emby_${embyKey}` : 'emby'}
-                  from="search"
-                />
-              </div>
+              <VideoCard
+                key={video.id}
+                id={video.id}
+                title={video.title}
+                poster={video.poster}
+                year={video.year}
+                source={embyKey ? `emby_${embyKey}` : 'emby'}
+                source_name={embySourceName}
+                from="search"
+              />
             ))}
           </div>
         )}
