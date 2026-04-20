@@ -6,74 +6,125 @@
 
 export default function artplayerPluginSeekButtons(option = {}) {
   return (art) => {
+    let currentSeekTime = option.seekTime || 10;
+    let currentMobileLayout = option.mobileLayout || 'both';
+
     const {
-      seekTime = 10, // 默认快进/快退 10 秒
+      seekTime = 10,
+      mobileLayout = 'both',
     } = option;
+
+    // 初始化当前值
+    currentSeekTime = seekTime;
+    currentMobileLayout = mobileLayout;
 
     // 检测屏幕宽度
     const isSmallScreen = () => window.innerWidth < 768;
 
-    // SVG 图标 - 后退10秒（YouTube风格：逆时针圆弧箭头 + 数字10）
-    const backwardIcon = `
+    // 生成图标的函数
+    const generateBackwardIcon = (time) => `
       <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%;">
         <path d="M16 4C9.373 4 4 9.373 4 16s5.373 12 12 12 12-5.373 12-12h-2.5c0 5.247-4.253 9.5-9.5 9.5S6.5 21.247 6.5 16 10.753 6.5 16 6.5c2.858 0 5.42 1.265 7.176 3.265L20 13h8V5l-2.94 2.94C22.697 5.39 19.547 4 16 4z" fill="currentColor"/>
-        <text x="16" y="19" text-anchor="middle" font-size="9" font-weight="bold" fill="currentColor" font-family="Arial, sans-serif">10</text>
+        <text x="16" y="19" text-anchor="middle" font-size="9" font-weight="bold" fill="currentColor" font-family="Arial, sans-serif">${time}</text>
       </svg>
     `;
 
-    // SVG 图标 - 前进10秒（YouTube风格：顺时针圆弧箭头 + 数字10）
-    const forwardIcon = `
+    const generateForwardIcon = (time) => `
       <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%;">
         <path d="M16 4c6.627 0 12 5.373 12 12s-5.373 12-12 12S4 22.627 4 16h2.5c0 5.247 4.253 9.5 9.5 9.5s9.5-4.253 9.5-9.5S21.247 6.5 16 6.5c-2.858 0-5.42 1.265-7.176 3.265L12 13H4V5l2.94 2.94C9.303 5.39 12.453 4 16 4z" fill="currentColor"/>
-        <text x="16" y="19" text-anchor="middle" font-size="9" font-weight="bold" fill="currentColor" font-family="Arial, sans-serif">10</text>
+        <text x="16" y="19" text-anchor="middle" font-size="9" font-weight="bold" fill="currentColor" font-family="Arial, sans-serif">${time}</text>
       </svg>
     `;
+
+    // SVG 图标 - 后退（YouTube风格：逆时针圆弧箭头 + 数字）
+    const backwardIcon = generateBackwardIcon(currentSeekTime);
+
+    // SVG 图标 - 前进（YouTube风格：顺时针圆弧箭头 + 数字）
+    const forwardIcon = generateForwardIcon(currentSeekTime);
 
     // 快进/快退功能
     const seekBackward = () => {
-      const newTime = Math.max(0, art.currentTime - seekTime);
+      const newTime = Math.max(0, art.currentTime - currentSeekTime);
       art.seek = newTime;
-      art.notice.show = `⏪ 后退 ${seekTime} 秒`;
+      art.notice.show = `⏪ 后退 ${currentSeekTime} 秒`;
     };
 
     const seekForward = () => {
-      const newTime = Math.min(art.duration, art.currentTime + seekTime);
+      const newTime = Math.min(art.duration, art.currentTime + currentSeekTime);
       art.seek = newTime;
-      art.notice.show = `⏩ 前进 ${seekTime} 秒`;
+      art.notice.show = `⏩ 前进 ${currentSeekTime} 秒`;
     };
 
     // 根据屏幕大小选择不同的实现方式
     if (isSmallScreen()) {
-      // 小屏幕：创建悬浮按钮在播放器左右两侧
+      // 小屏幕：创建悬浮按钮
       const createFloatingButton = (side) => {
         const button = document.createElement('div');
         button.className = `art-seek-floating-${side}`;
-        button.innerHTML = side === 'left' ? backwardIcon : forwardIcon;
-        button.onclick = side === 'left' ? seekBackward : seekForward;
+
+        // 双向箭头图标
+        const dualIcon = `
+          <svg viewBox="0 0 48 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%;">
+            <!-- 左侧后退箭头 -->
+            <g transform="translate(0, 0) scale(0.65)">
+              <path d="M16 4C9.373 4 4 9.373 4 16s5.373 12 12 12 12-5.373 12-12h-2.5c0 5.247-4.253 9.5-9.5 9.5S6.5 21.247 6.5 16 10.753 6.5 16 6.5c2.858 0 5.42 1.265 7.176 3.265L20 13h8V5l-2.94 2.94C22.697 5.39 19.547 4 16 4z" fill="currentColor"/>
+              <text x="16" y="19" text-anchor="middle" font-size="9" font-weight="bold" fill="currentColor" font-family="Arial, sans-serif">${seekTime}</text>
+            </g>
+            <!-- 右侧前进箭头 -->
+            <g transform="translate(24, 0) scale(0.65)">
+              <path d="M16 4c6.627 0 12 5.373 12 12s-5.373 12-12 12S4 22.627 4 16h2.5c0 5.247 4.253 9.5 9.5 9.5s9.5-4.253 9.5-9.5S21.247 6.5 16 6.5c-2.858 0-5.42 1.265-7.176 3.265L12 13H4V5l2.94 2.94C9.303 5.39 12.453 4 16 4z" fill="currentColor"/>
+              <text x="16" y="19" text-anchor="middle" font-size="9" font-weight="bold" fill="currentColor" font-family="Arial, sans-serif">${seekTime}</text>
+            </g>
+          </svg>
+        `;
+        button.innerHTML = dualIcon;
+
+        // 点击事件：左半边快退，右半边快进
+        button.onclick = (e) => {
+          const rect = button.getBoundingClientRect();
+          const clickX = e.clientX - rect.left;
+          const isLeftHalf = clickX < rect.width / 2;
+
+          if (isLeftHalf) {
+            seekBackward();
+          } else {
+            seekForward();
+          }
+        };
+
         return button;
       };
 
       art.on('ready', () => {
-        const leftButton = createFloatingButton('left');
-        const rightButton = createFloatingButton('right');
+        const buttons = [];
 
-        art.template.$player.appendChild(leftButton);
-        art.template.$player.appendChild(rightButton);
+        // 根据 mobileLayout 创建按钮
+        if (mobileLayout === 'both') {
+          // 双侧模式：左右各一个
+          const leftButton = createFloatingButton('left');
+          const rightButton = createFloatingButton('right');
+          art.template.$player.appendChild(leftButton);
+          art.template.$player.appendChild(rightButton);
+          buttons.push(leftButton, rightButton);
+        } else {
+          // 单侧模式：只在一侧显示
+          const button = createFloatingButton(mobileLayout);
+          art.template.$player.appendChild(button);
+          buttons.push(button);
+        }
 
         // 跟随控制栏的显示/隐藏状态
         const updateButtonsVisibility = () => {
           const controlsVisible = art.controls.show;
-          if (controlsVisible) {
-            leftButton.style.opacity = '0.85';
-            leftButton.style.pointerEvents = 'auto';
-            rightButton.style.opacity = '0.85';
-            rightButton.style.pointerEvents = 'auto';
-          } else {
-            leftButton.style.opacity = '0';
-            leftButton.style.pointerEvents = 'none';
-            rightButton.style.opacity = '0';
-            rightButton.style.pointerEvents = 'none';
-          }
+          buttons.forEach(button => {
+            if (controlsVisible) {
+              button.style.opacity = '0.85';
+              button.style.pointerEvents = 'auto';
+            } else {
+              button.style.opacity = '0';
+              button.style.pointerEvents = 'none';
+            }
+          });
         };
 
         // 监听控制栏显示/隐藏事件
@@ -91,13 +142,13 @@ export default function artplayerPluginSeekButtons(option = {}) {
           position: absolute;
           top: 50%;
           transform: translateY(-50%);
-          width: 64px;
+          width: 80px;
           height: 64px;
           background: rgba(255, 255, 255, 0.15);
           backdrop-filter: blur(12px);
           -webkit-backdrop-filter: blur(12px);
           border: 1px solid rgba(255, 255, 255, 0.2);
-          border-radius: 50%;
+          border-radius: 32px;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -141,7 +192,7 @@ export default function artplayerPluginSeekButtons(option = {}) {
         .art-fullscreen .art-seek-floating-right,
         .art-fullscreen-web .art-seek-floating-left,
         .art-fullscreen-web .art-seek-floating-right {
-          width: 72px;
+          width: 96px;
           height: 72px;
           padding: 16px;
         }
@@ -202,6 +253,96 @@ export default function artplayerPluginSeekButtons(option = {}) {
 
     return {
       name: 'artplayerPluginSeekButtons',
+      config: (newOptions) => {
+        const oldSeekTime = currentSeekTime;
+        const oldMobileLayout = currentMobileLayout;
+
+        // 更新配置
+        if (newOptions.seekTime !== undefined) {
+          currentSeekTime = newOptions.seekTime;
+        }
+        if (newOptions.mobileLayout !== undefined) {
+          currentMobileLayout = newOptions.mobileLayout;
+        }
+
+        // 更新桌面端按钮
+        if (!isSmallScreen()) {
+          const backwardBtn = art.controls['seek-backward'];
+          const forwardBtn = art.controls['seek-forward'];
+          if (backwardBtn && forwardBtn) {
+            backwardBtn.innerHTML = generateBackwardIcon(currentSeekTime);
+            forwardBtn.innerHTML = generateForwardIcon(currentSeekTime);
+            backwardBtn.tooltip = `后退 ${currentSeekTime} 秒`;
+            forwardBtn.tooltip = `前进 ${currentSeekTime} 秒`;
+          }
+        } else {
+          // 移动端：检查是否需要重建按钮
+          const layoutChanged = newOptions.mobileLayout !== undefined && oldMobileLayout !== currentMobileLayout;
+
+          if (layoutChanged) {
+            // 布局改变：需要重建按钮（数量和位置会变）
+            const oldButtons = art.template.$player.querySelectorAll('.art-seek-floating-left, .art-seek-floating-right');
+            oldButtons.forEach(btn => btn.remove());
+
+            const createFloatingButton = (side) => {
+              const button = document.createElement('div');
+              button.className = `art-seek-floating-${side}`;
+              const dualIcon = `
+                <svg viewBox="0 0 48 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%;">
+                  <g transform="translate(0, 0) scale(0.65)">
+                    <path d="M16 4C9.373 4 4 9.373 4 16s5.373 12 12 12 12-5.373 12-12h-2.5c0 5.247-4.253 9.5-9.5 9.5S6.5 21.247 6.5 16 10.753 6.5 16 6.5c2.858 0 5.42 1.265 7.176 3.265L20 13h8V5l-2.94 2.94C22.697 5.39 19.547 4 16 4z" fill="currentColor"/>
+                    <text x="16" y="19" text-anchor="middle" font-size="9" font-weight="bold" fill="currentColor" font-family="Arial, sans-serif">${currentSeekTime}</text>
+                  </g>
+                  <g transform="translate(24, 0) scale(0.65)">
+                    <path d="M16 4c6.627 0 12 5.373 12 12s-5.373 12-12 12S4 22.627 4 16h2.5c0 5.247 4.253 9.5 9.5 9.5s9.5-4.253 9.5-9.5S21.247 6.5 16 6.5c-2.858 0-5.42 1.265-7.176 3.265L12 13H4V5l2.94 2.94C9.303 5.39 12.453 4 16 4z" fill="currentColor"/>
+                    <text x="16" y="19" text-anchor="middle" font-size="9" font-weight="bold" fill="currentColor" font-family="Arial, sans-serif">${currentSeekTime}</text>
+                  </g>
+                </svg>
+              `;
+              button.innerHTML = dualIcon;
+              button.onclick = (e) => {
+                const rect = button.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const isLeftHalf = clickX < rect.width / 2;
+                if (isLeftHalf) {
+                  seekBackward();
+                } else {
+                  seekForward();
+                }
+              };
+              return button;
+            };
+
+            if (currentMobileLayout === 'both') {
+              const leftButton = createFloatingButton('left');
+              const rightButton = createFloatingButton('right');
+              art.template.$player.appendChild(leftButton);
+              art.template.$player.appendChild(rightButton);
+            } else {
+              const button = createFloatingButton(currentMobileLayout);
+              art.template.$player.appendChild(button);
+            }
+          } else if (newOptions.seekTime !== undefined) {
+            // 只是秒数改变：只更新 innerHTML，不重建按钮
+            const buttons = art.template.$player.querySelectorAll('.art-seek-floating-left, .art-seek-floating-right');
+            buttons.forEach(button => {
+              const dualIcon = `
+                <svg viewBox="0 0 48 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%;">
+                  <g transform="translate(0, 0) scale(0.65)">
+                    <path d="M16 4C9.373 4 4 9.373 4 16s5.373 12 12 12 12-5.373 12-12h-2.5c0 5.247-4.253 9.5-9.5 9.5S6.5 21.247 6.5 16 10.753 6.5 16 6.5c2.858 0 5.42 1.265 7.176 3.265L20 13h8V5l-2.94 2.94C22.697 5.39 19.547 4 16 4z" fill="currentColor"/>
+                    <text x="16" y="19" text-anchor="middle" font-size="9" font-weight="bold" fill="currentColor" font-family="Arial, sans-serif">${currentSeekTime}</text>
+                  </g>
+                  <g transform="translate(24, 0) scale(0.65)">
+                    <path d="M16 4c6.627 0 12 5.373 12 12s-5.373 12-12 12S4 22.627 4 16h2.5c0 5.247 4.253 9.5 9.5 9.5s9.5-4.253 9.5-9.5S21.247 6.5 16 6.5c-2.858 0-5.42 1.265-7.176 3.265L12 13H4V5l2.94 2.94C9.303 5.39 12.453 4 16 4z" fill="currentColor"/>
+                    <text x="16" y="19" text-anchor="middle" font-size="9" font-weight="bold" fill="currentColor" font-family="Arial, sans-serif">${currentSeekTime}</text>
+                  </g>
+                </svg>
+              `;
+              button.innerHTML = dualIcon;
+            });
+          }
+        }
+      },
     };
   };
 }
